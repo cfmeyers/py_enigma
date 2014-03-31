@@ -42,4 +42,19 @@ def findInverseMapping(regWiring, printing=True):
     return invertedWiring
 
 
+def build_stepping_list(wiringList):
+    """
+    Given a list of ints corresponding to rotor at initial position A (e.g. 0)
+    return a list of lists of all possible initial positions.
+    Example: Given [0,1,2,3]
+             Return [[0,1,2,3], [1,2,3,0], [2,3,0,1], [3,0,1,2]]
+    """
+    steppingList = []
 
+    for offset, item in enumerate(wiringList):
+        newList = []
+        newList.extend(wiringList[offset:])
+        newList.extend(wiringList[:offset])
+        steppingList.append(newList)
+
+    return steppingList

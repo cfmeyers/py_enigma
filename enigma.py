@@ -1,7 +1,6 @@
-from enigma_string_lib import turn_string_into_int_list, turn_int_list_into_alphabet_string, ALPHABET, snapshot, findInverseMapping
+from enigma_string_lib import turn_string_into_int_list, turn_int_list_into_alphabet_string, ALPHABET, snapshot, findInverseMapping, build_stepping_list
 
 from enigma_data import I,II,III,IV,V,VI,VII,VIII, reflectorB
-from enigma_data import testRotorI, testRotorII, testRotorIII 
 
 
 def step(rotor):
@@ -22,138 +21,111 @@ def step(rotor):
             step(rotor["nextRotor"])
 
 
-def transform_char_with_rotor(character, rotor, inverse=False, v=False):
+def transform_char_with_rotor(charIndex, rotor, inverse=False, v=True):
     """
-    Example:  
-    ABCDEFGHIJKLMNOPQRSTUVWXYZ  <--- input
-    EKMFLGDQVZNTOWYHXUSPAIBRCJ  <--- output
-    
-    In the above example, you put in an A, you'll get out an E.  Here the offset is 0.
-
-    Example:  
-    ABCDEFGHIJKLMNOPQRSTUVWXYZ  <--- input
-    KMFLGDQVZNTOWYHXUSPAIBRCJE  <--- output
-
-    Now when you put in an A you'll get out a J.  The offset is 1.  Notice how all the
-    output letters shifted over by 1.
-
-    Note that in the actual code the characters are represented as integers
-    (so A is 0, B is 1, C is 2, etc etc)
+    Maps rotor input (a character represented by an integer between 0 and 25)
+    to rotor output (also a character represented by an integer between 0 and 25).
     """
-
-    offset = rotor["offset"] #an integer between 0 and 25
+   
+    offset = rotor["offset"] 
+    wiring = rotor["wiringList"][offset]
+    newCharIndex = wiring[charIndex]
+    # newCharIndex = (wiring[charIndex] - 1)  % 26
 
     if inverse:
-        wiring = rotor["inverse-wiring"] 
-        # wiring = findInverseMapping(rotor["wiring"])
-    else:
-        wiring = rotor["wiring"] 
+        wiring = findInverseMapping(wiring, printing=False)
+        newCharIndex = wiring[charIndex]
+        # newCharIndex = (wiring[charIndex] + 1)  % 26
 
-    pointer = abs(character + offset) % 26
 
     if v: #verbose flag for tracing process of transformation
-        print "Through "+rotor["name"]+"\t:"+ALPHABET[character]+"->"+ALPHABET[wiring[pointer]]
+        print("Through "+rotor["name"]+"\t:"+
+              ALPHABET[charIndex]+"->"+ALPHABET[newCharIndex])
 
-    return wiring[pointer]
-    
+    return newCharIndex
+
+
 
 def use_enigma(plaintext, left, middle, right,
                leftOffset=0, middleOffset=0, rightOffset=0):
+    """
+    Models the 3 rotors as simple dictionaries
+           -  turnover  - list of indices where rotor will cause next rotor to increment                          1 space
+           -  offset    - corresponds to the letters on the dials with original enigma
+           -  name      - either left, middle, or right rotor
+           -  nextRotor - indicates the rotor to this rotor's left
+           -  wiringList- list of each possible list of mappings for this rotor
+                          e.g. for a rotor whose mapping list (when the dial is turned
+                          to A) is [3,0,1,2] would have a wiringList of
+                          [[3,0,1,2], [0,1,2,3], [1,2,3,0], [2,3,0,1]]
+    
+    """
 
-    leftRotor   = {"wiring"   :left["wiring"],
-                   "inverse-wiring":left["inverse-wiring"],
+
+    leftRotor   = {
+                   "wiringList": build_stepping_list(left["wiring"]),
                    "turnover" :left["turnover"],
                    "offset"   :leftOffset,
                    "name"     :"left rotor",
                    "nextRotor":None}
 
-    middleRotor = {"wiring"   :middle["wiring"],
-                   "inverse-wiring":middle["inverse-wiring"],
+    middleRotor = {
+                   "wiringList": build_stepping_list(middle["wiring"]),
                    "turnover" :middle["turnover"],
                    "offset"   :middleOffset,
                    "name"     :"middle rotor",
                    "nextRotor":leftRotor}
 
-    rightRotor  = {"wiring"   :right["wiring"],
-                   "inverse-wiring":right["inverse-wiring"],
-                   "turnover" :middle["turnover"],
+    rightRotor  = {
+                   "wiringList": build_stepping_list(right["wiring"]),
                    "turnover" :right["turnover"],
                    "offset"   :rightOffset,
                    "name"     :"right rotor",
                    "nextRotor":middleRotor}
 
 
-    ciphertextNumberList = []
     plaintextNumberList = turn_string_into_int_list(plaintext)
+    ciphertext = ""
 
-    for character in plaintextNumberList:
+    for charIndex in plaintextNumberList:
         step(rightRotor)
-        # snapshot(leftRotor, middleRotor, rightRotor)
+        #steps after the key is pressed but before signal is sent to the first rotor
+        snapshot(leftRotor, middleRotor, rightRotor)
 
-        print "TRANSFORMING "+ALPHABET[character].upper()
+        print "TRANSFORMING "+ALPHABET[charIndex].upper()
 
-        character = transform_char_with_rotor(character, rightRotor, v=True)
-        character = transform_char_with_rotor(character, middleRotor, v=True)
-        character = transform_char_with_rotor(character, leftRotor, v=True)
+        #Through the rotors moving left
+        charIndex = transform_char_with_rotor(charIndex, rightRotor)
+        charIndex = transform_char_with_rotor(charIndex, middleRotor)
+        charIndex = transform_char_with_rotor(charIndex, leftRotor)
 
-        print "Through Reflector \t:"+ALPHABET[character]+"->"+ALPHABET[reflectorB[character]]
-        character = reflectorB[character]
+        print "Through Reflector \t:"+ALPHABET[charIndex]+"->"+ALPHABET[reflectorB[charIndex]]
 
-        character = transform_char_with_rotor(character, leftRotor, inverse=True,v=True)
-        character = transform_char_with_rotor(character, middleRotor,inverse=True,v=True)
-        character = transform_char_with_rotor(character, rightRotor,inverse=True,v=True)
+        charIndex = reflectorB[charIndex] #through the reflector
 
-        ciphertextNumberList.append(character)
+        #Through the rotors moving right (so must invert the mappings)
+        charIndex = transform_char_with_rotor(charIndex, leftRotor, inverse=True)
+        charIndex = transform_char_with_rotor(charIndex, middleRotor,inverse=True)
+        charIndex = transform_char_with_rotor(charIndex, rightRotor,inverse=True)
 
+        #Process is finished for this character
+        ciphertext+= ALPHABET[charIndex]
 
+    print ciphertext.upper()
 
-    print turn_int_list_into_alphabet_string(ciphertextNumberList).upper()
+    return ciphertext
 
     
-# use_enigma("a",III,II,I)
-# use_enigma("p",III,II,I)
-# use_enigma("w",III,II,I,0,0,0)
-
-# use_enigma("a",III,IV,I,3,7,6)
-# use_enigma("w",III,IV,I,3,7,6)
-# use_enigma("a",III,II,I)
-# use_enigma("n",III,II,I)
-
-use_enigma("a", testRotorIII, testRotorII, testRotorI, 1,1,1)
-use_enigma("l", testRotorIII, testRotorII, testRotorI, 1,1,1)
-# use_enigma("f", testRotorIII, testRotorII, testRotorI)
-
-# print "I"
-# print turn_int_list_into_alphabet_string(findInverseMapping(I["wiring"])).upper()
-# print "UWYGADFPVZBECKMTHXSLRINQOJ"
-
-# print "II"
-# print turn_int_list_into_alphabet_string(findInverseMapping(II["wiring"])).upper()
-# print "AJPCZWRLFBDKOTYUQGENHXMIVS"
-
-# print "III"
-# print turn_int_list_into_alphabet_string(findInverseMapping(III["wiring"])).upper()
-# print "TAGBPCSDQEUFVNZHYIXJWLRKOM"
-
-# print "IV"
-# findInverseMapping(IV["wiring"])
-
-# print "V"
-# findInverseMapping(V["wiring"])
-
-# print "VI"
-# findInverseMapping(VI["wiring"])
-
-# print "VII"
-# findInverseMapping(VII["wiring"])
-
-# print "VIII"
-# findInverseMapping(VIII["wiring"])
+use_enigma("a",I,II,III,0,0,0)
+use_enigma("d",I,II,III,0,0,0)
 
 
 
+# ct = use_enigma("a",I,II,III,0,0,0)[0]
+# ct = use_enigma("a",III,IV,I,3,7,6)[0]
+# ct = use_enigma("a",III,IV,I,0,0,1)[0]
+# ct = ALPHABET[ct]
+# use_enigma(ct,III,IV,I,3,7,6)
+# use_enigma(ct,I,II,III,0,0,0)
 
 
-
-
-   
